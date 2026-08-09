@@ -1,0 +1,72 @@
+[
+  {
+    "severity": "🔴 严重",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 196,
+    "summary": "蛇头撞尾判误：自撞检测在 newSnake.pop() 移除尾部之前执行，导致蛇头移动到尾巴刚离开的格子时被误判为游戏结束",
+    "failure_scenario": "蛇身长度≥4，以 2x2 环形移动（如 RIGHT→DOWN→LEFT→UP），当蛇头进入尾巴即将腾出的格子时，.some() 检测到蛇尾还在老位置，触发 false game over。这在标准贪吃蛇中是合法走法，不应判负。修复：改为 snakeRef.current.slice(0, -1).some(...) 或在 pop 之后再做碰撞检测"
+  },
+  {
+    "severity": "🔴 严重",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 238,
+    "summary": "startGame 无防重入保护：双击"开始"按钮会同时启动两条游戏循环，导致画面混乱、重复得分",
+    "failure_scenario": "快速双击开始按钮 → React 重渲染是异步的，按钮未隐藏 → startGame() 执行两次 → 两个 setTimeout 同时运行 → 两个 tick 链并行修改 snakeRef/foodRef/scoreRef → 画面闪烁、一条蛇两个头。修复：在 startGame 开头加 if (timerRef.current) clearTimeout(timerRef.current) 或加 statusRef 守卫"
+  },
+  {
+    "severity": "🟠 中",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 233,
+    "summary": "方向键被覆盖：从 idle/over 状态按方向键启动游戏时，startGame 硬编码 nextDirectionRef = {x:1,y:0}，丢弃用户按下的方向",
+    "failure_scenario": "用户按 ↑ 启动新游戏 → 键盘处理存了 {x:0,y:-1} → startGame() 立即将其覆盖为 → {x:1,y:0} → 蛇始终向右移动，用户困惑。修复：startGame 从 nextDirectionRef 读取方向而不是写死"
+  },
+  {
+    "severity": "🟠 中",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 86,
+    "summary": "缺少胜利条件：蛇填满全部 400 格时，spawnFood 返回已占用的 {x:0,y:0}，玩家看到的不是"恭喜通关"而是"游戏结束"",
+    "failure_scenario": "高手蛇身覆盖 20x20 全部 400 格 → spawnFood candidates=[], fallback 返回 {0,0} → 食物在蛇身下不可见 → 头部无处可去撞自己 → 显示"游戏结束"而非"恭喜通关""
+  },
+  {
+    "severity": "🟡 低",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 73,
+    "summary": "highScore 作为 useCallback 依赖导致回调链级联重建：每次破纪录，tick/startGame/togglePause 全被重建，键盘监听器反复卸载重绑",
+    "failure_scenario": "游戏中 score 每 +1 且超过 highScore → updateScore 重建 → tick 重建 → startGame/togglePause 重建 → useEffect 重绑定 keyboard listener。改法：用 highScoreRef 代替 highScore 作为 updateScore 的闭包变量"
+  },
+  {
+    "severity": "🟡 低",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 10,
+    "summary": "未使用的导入：Typography.Title 被解构但从未在 JSX 中使用",
+    "failure_scenario": "编译后 tree-shaking 可能移除，但代码中产生噪音。修复：const { Text } = Typography"
+  },
+  {
+    "severity": "🟡 低",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 29,
+    "summary": "WASD 方向映射重复：大写 WASD (4 个条目) 与小写 wasd 值完全相同，可以通过 key.toLowerCase() 归一化减少冗余",
+    "failure_scenario": "维护成本：改一个方向值需要改两处。修复：移除大写条目，在 handler 中对单字符键做 toLowerCase() 归一化"
+  },
+  {
+    "severity": "🟢 建议",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 42,
+    "summary": "status/statusRef 和 score/scoreRef 双重状态维护：每次写入都必须同时更新 useState 和 useRef，容易遗漏导致不同步",
+    "failure_scenario": "维护风险：如果未来有人直接 setStatus(x) 而不调用 updateStatus，statusRef 将变成过期值，游戏循环读到的 and 状态不一致。改法：抽取 useSyncedRef 自定义 Hook"
+  },
+  {
+    "severity": "🟢 建议",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 333,
+    "summary": "Ant Design 5 废弃 API：Card 的 bodyStyle 属性已被 styles.body 替代，控制台会有警告",
+    "failure_scenario": "dev 模式下控制台黄色警告。功能正常，但未来 Ant Design 大版本升级可能移除。修复：改为 styles={{ body: { padding: 0, ... } }}"
+  },
+  {
+    "severity": "🟢 建议",
+    "file": "src/components/SnakeGame.tsx",
+    "line": 1,
+    "summary": "文件位置不规范：CLAUDE.md 规定 src/components/ 存放"可复用组件"，SnakeGame 是独立页面应放在 src/pages/",
+    "failure_scenario": "项目结构不一致：HomePage/RecordPage 等都在 pages/，唯独 SnakeGame 在 components/。新人不易找到"
+  }
+]
