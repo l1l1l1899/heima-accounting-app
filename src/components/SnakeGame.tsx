@@ -258,8 +258,8 @@ function useSnakeGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
       foodRef.current = newFood
     }
 
-    // 6. 撞自己检测
-    if (isSelfCollision(newHead, newSnake)) {
+    // 6. 撞自己检测（排除蛇头自身，只检查身体部分）
+    if (isSelfCollision(newHead, newSnake.slice(1))) {
       updateStatus('over')
       return
     }
