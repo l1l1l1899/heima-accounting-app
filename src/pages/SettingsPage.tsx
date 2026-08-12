@@ -17,6 +17,7 @@ import {
   ExclamationCircleOutlined
 } from '@ant-design/icons'
 import * as db from '../database/api'
+import { useAppStore } from '../stores/useAppStore'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -100,6 +101,7 @@ export default function SettingsPage(): JSX.Element {
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const loadAll = useAppStore(s => s.loadAll)
 
   // ====== 导出数据 ======
   /**
@@ -228,7 +230,7 @@ export default function SettingsPage(): JSX.Element {
       message.success(`导入完成！成功 ${successCount} 条${skipCount > 0 ? `，跳过 ${skipCount} 条格式不符的行` : ''}`)
 
       // 刷新页面以显示新数据
-      window.location.reload()
+      loadAll()
     } catch (err) {
       message.error('导入失败，请检查文件格式')
     } finally {
@@ -255,7 +257,7 @@ export default function SettingsPage(): JSX.Element {
           // 执行 DELETE 语句清空交易表
           await db.executeSql('DELETE FROM transactions')
           message.success('数据已清空')
-          window.location.reload()
+          loadAll()
         } catch (err) {
           message.error('清空失败')
         } finally {

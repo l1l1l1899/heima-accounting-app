@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js'
+import initSqlJs, { Database as SqlJsDatabase, type SqlValue } from 'sql.js'
 
 let db: SqlJsDatabase | null = null
 let dbPath: string = ''
@@ -242,7 +242,7 @@ function getDb(): SqlJsDatabase {
 export function queryAll(sql: string, params: unknown[] = []): unknown[] {
   const db = getDb()
   const stmt = db.prepare(sql)
-  stmt.bind(params as never[])
+  stmt.bind(params as SqlValue[])
   const results: unknown[] = []
   while (stmt.step()) {
     results.push(stmt.getAsObject())
@@ -260,7 +260,7 @@ export function queryOne(sql: string, params: unknown[] = []): unknown | null {
 /** 执行写操作（INSERT/UPDATE/DELETE） */
 export function execute(sql: string, params: unknown[] = []): { changes: number; lastInsertId: number } {
   const db = getDb()
-  db.run(sql, params as never[])
+  db.run(sql, params as SqlValue[])
   saveToDisk()
   return {
     changes: db.getRowsModified(),

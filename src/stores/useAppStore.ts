@@ -34,6 +34,7 @@ interface AppState {
 
   // ====== UI 状态 ======
   loading: boolean                             // 是否正在加载数据
+  error: string | null                         // 全局错误信息（供页面展示）
 
   // ====== Actions（操作方法） ======
   loadCategories: () => Promise<void>          // 加载分类数据
@@ -89,6 +90,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   categoryStats: [],
   monthlyTrends: [],
   loading: false,
+  error: null,
 
   // ====== 数据加载 Actions ======
 
@@ -117,10 +119,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         expenseLevel1: expenseL1,
         expenseLevel2Map: expenseL2Map,
         incomeLevel1: incomeL1,
-        incomeLevel2Map: incomeL2Map
+        incomeLevel2Map: incomeL2Map,
+        error: null  // 成功则清除错误
       })
     } catch (err) {
       console.error('加载分类数据失败:', err)
+      set({ error: '分类数据加载失败，请重启应用' })
     }
   },
 
@@ -137,9 +141,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         startDate: `${prefix}-01`,
         endDate: `${prefix}-31`
       })
-      set({ transactions })
+      set({ transactions, error: null })
     } catch (err) {
       console.error('加载账目数据失败:', err)
+      set({ error: '账目数据加载失败' })
     }
   },
 
@@ -155,24 +160,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         db.getCategoryStats(currentMonth.year, currentMonth.month),
         db.getMonthlyTrends()
       ])
-      set({ monthlyOverview, categoryStats, monthlyTrends })
+      set({ monthlyOverview, categoryStats, monthlyTrends, error: null })
     } catch (err) {
       console.error('加载统计数据失败:', err)
+      set({ error: '统计数据加载失败' })
     }
   },
 
   /**
    * 一次性加载全部数据（首页用）
-   * 三个加载并发执行，loading 状态包裹整个过程
+   * 使用 allSettled 确保单个模块失败不影响其他模块加载
+   * loading 状态包裹整个过程
    */
   loadAll: async () => {
     set({ loading: true })
     try {
-      await Promise.all([
+      const results = await Promise.allSettled([
         get().loadCategories(),
         get().loadTransactions(),
         get().loadStatistics()
       ])
+      // 收集所有失败信息
+      const failures = results
+        .map((r, i) => r.status === 'rejected' ? ['分类', '账目', '统计'][i] : null)
+        .filter(Boolean)
+      if (failures.length > 0) {
+        console.error(`数据加载部分失败: ${failures.join('、')}`)
+      }
     } finally {
       set({ loading: false })
     }

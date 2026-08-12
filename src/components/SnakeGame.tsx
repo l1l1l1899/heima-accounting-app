@@ -22,48 +22,34 @@ import {
   ReloadOutlined,
   TrophyOutlined
 } from '@ant-design/icons'
+import {
+  GRID_SIZE,
+  MAX_CELLS,
+  INITIAL_SPEED,
+  MIN_SPEED,
+  SPEED_STEP,
+  DIRECTION_VECTORS,
+  getDirection,
+  isOppositeDirection,
+  isWallCollision,
+  isSelfCollision,
+  isEating,
+  isWin,
+  calcNewSpeed,
+  getFoodCandidates,
+  isDirectionKey,
+  isSpaceKey,
+  updateHighScore,
+  moveSnakeHead,
+  type Point,
+} from '../utils/snake-game'
 
 const { Text } = Typography
 
-// ====== 游戏配置常量 ======
-// 网格大小：20×20 = 400 个格子，蛇填满所有格子 = 通关
-const GRID_SIZE = 20
-// 每个格子的像素大小（Canvas 绘制用）
+// Canvas 专用常量（与游戏逻辑无关，只影响画面大小）
 const CELL_SIZE = 22
-// Canvas 总尺寸
 const CANVAS_SIZE = GRID_SIZE * CELL_SIZE  // 440px
-// 初始移动速度：150ms/帧（约 6.7 帧/秒）
-const INITIAL_SPEED = 150
-// 最快速度：50ms/帧（约 20 帧/秒，再快就太难了）
-const MIN_SPEED = 50
-// 每吃一个食物，速度减少 3ms（蛇变快一点）
-const SPEED_STEP = 3
-// 最大格子数 = 蛇能占满整个网格时的长度
-const MAX_CELLS = GRID_SIZE * GRID_SIZE  // 400
 
-/**
- * 方向键到方向向量的映射
- *
- * 方向向量 {x, y} 的含义：
- * - x: 水平移动，1=向右一格，-1=向左一格，0=不左右移动
- * - y: 垂直移动，1=向下一格，-1=向上一格，0=不上下移动
- *
- * 同时支持方向键（ArrowUp/Down/Left/Right）和 WASD 键
- * 键盘输入会先转小写再匹配，所以大小写 WASD 都可以
- */
-const DIR: Record<string, { x: number; y: number }> = {
-  ArrowUp: { x: 0, y: -1 },
-  ArrowDown: { x: 0, y: 1 },
-  ArrowLeft: { x: -1, y: 0 },
-  ArrowRight: { x: 1, y: 0 },
-  w: { x: 0, y: -1 },
-  s: { x: 0, y: 1 },
-  a: { x: -1, y: 0 },
-  d: { x: 1, y: 0 }
-}
-
-/** 坐标点类型 */
-type Point = { x: number; y: number }
 /** 游戏状态 */
 type GameStatus = 'idle' | 'running' | 'paused' | 'over' | 'win'
 
@@ -94,36 +80,22 @@ function useSnakeGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
     setStatus(s)
   }, [])
 
-  // 同步 score（用 ref 避免闭包过期，消除 highScore 依赖级联）
+  // 同步 score（委托给纯函数 updateHighScore 计算是否破纪录）
   const updateScore = useCallback((s: number) => {
     scoreRef.current = s
     setScore(s)
-    if (s > highScoreRef.current) {
-      highScoreRef.current = s
-      setHighScore(s)
-      try { localStorage.setItem('snake-high-score', String(s)) } catch { /* quota unlikely but ignore */ }
+    const { newHighScore, isNewRecord } = updateHighScore(s, highScoreRef.current)
+    if (isNewRecord) {
+      highScoreRef.current = newHighScore
+      setHighScore(newHighScore)
+      try { localStorage.setItem('snake-high-score', String(newHighScore)) } catch { /* 忽略存储异常 */ }
     }
   }, [])
 
-  // ====== 生成食物（在未被蛇占据的空格中随机选一个） ======
-  /**
-   * 遍历整个网格，找到所有不被蛇身占据的格子，
-   * 从中随机选一个放置新食物
-   * 如果所有格子都被占满了 → 返回 null（表示通关）
-   */
+  // ====== 生成食物（委托给纯函数 getFoodCandidates） ======
   const spawnFood = useCallback((): Point | null => {
-    // 把蛇身所有格子坐标收集到 Set，O(1) 查重
-    const occupied = new Set(snakeRef.current.map(p => `${p.x},${p.y}`))
-    const candidates: Point[] = []
-    // 遍历整个网格，筛出所有空格子
-    for (let x = 0; x < GRID_SIZE; x++) {
-      for (let y = 0; y < GRID_SIZE; y++) {
-        if (!occupied.has(`${x},${y}`)) {
-          candidates.push({ x, y })
-        }
-      }
-    }
-    if (candidates.length === 0) return null  // 格子已满
+    const candidates = getFoodCandidates(snakeRef.current, GRID_SIZE)
+    if (candidates.length === 0) return null
     return candidates[Math.floor(Math.random() * candidates.length)]
   }, [])
 
@@ -242,33 +214,33 @@ function useSnakeGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
     const currentDirection = nextDirectionRef.current
     directionRef.current = currentDirection
 
-    const head = snakeRef.current[0]
-    // 2. 计算蛇头新位置（当前头坐标 + 方向向量）
-    const newHead: Point = {
-      x: head.x + currentDirection.x,
-      y: head.y + currentDirection.y
-    }
+    // 2. 计算蛇头新位置
+    const newHead = moveSnakeHead(snakeRef.current[0], currentDirection)
 
-    // 3. 撞墙检测：新头坐标超出网格边界 → Game Over
-    if (newHead.x < 0 || newHead.x >= GRID_SIZE || newHead.y < 0 || newHead.y >= GRID_SIZE) {
+    // 3. 撞墙检测
+    if (isWallCollision(newHead, GRID_SIZE)) {
       updateStatus('over')
       return
     }
 
-    // 4. 吃食物判定（在构建新蛇身之前，比较新头坐标和食物坐标）
-    const ate = newHead.x === foodRef.current.x && newHead.y === foodRef.current.y
+    // 4. 吃食物判定
+    const ate = isEating(newHead, foodRef.current)
 
-    // 构建新蛇身：新头插在最前面
-    const newSnake = [newHead, ...snakeRef.current]
+    // 5. 构建新蛇身
+    const newSnake = ate
+      ? [newHead, ...snakeRef.current]   // 吃到 → 加头不去尾（增长）
+      : (() => {                          // 没吃到 → 加头去尾（移动）
+          const moved = [newHead, ...snakeRef.current]
+          moved.pop()
+          return moved
+        })()
 
     if (ate) {
-      // 5a. 吃到了——不去尾（蛇身自然 +1），加分并加速
       updateScore(scoreRef.current + 1)
-      // 速度加快：减少帧间隔时间，但不低于 MIN_SPEED
-      speedRef.current = Math.max(MIN_SPEED, speedRef.current - SPEED_STEP)
+      speedRef.current = calcNewSpeed(speedRef.current, SPEED_STEP)
 
-      // 通关检测：蛇填满所有格子
-      if (newSnake.length >= MAX_CELLS) {
+      // 通关检测
+      if (isWin(newSnake.length, MAX_CELLS)) {
         snakeRef.current = newSnake
         draw()
         updateStatus('win')
@@ -278,20 +250,16 @@ function useSnakeGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
       // 生成新食物
       const newFood = spawnFood()
       if (newFood === null) {
-        // 无空位可放食物 = 通关
         snakeRef.current = newSnake
         draw()
         updateStatus('win')
         return
       }
       foodRef.current = newFood
-    } else {
-      // 5b. 没吃到——去掉尾巴（蛇整体向前移动一格）
-      newSnake.pop()
     }
 
-    // 6. 撞自己检测（去尾之后再做，否则蛇尾刚移开的位置可能被误判为碰撞）
-    if (newSnake.slice(1).some(p => p.x === newHead.x && p.y === newHead.y)) {
+    // 6. 撞自己检测
+    if (isSelfCollision(newHead, newSnake)) {
       updateStatus('over')
       return
     }
@@ -300,7 +268,7 @@ function useSnakeGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
     // 7. 重绘画面
     draw()
 
-    // 8. 安排下一帧（游戏循环：setTimeout 递归调用 tick）
+    // 8. 安排下一帧
     if (statusRef.current === 'running') {
       timerRef.current = window.setTimeout(tick, speedRef.current)
     }
@@ -352,24 +320,19 @@ function useSnakeGame(canvasRef: React.RefObject<HTMLCanvasElement | null>) {
    */
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      // 归一化：大写 WASD → 小写
-      // 先直接匹配，再尝试转小写匹配（兼容 WASD 大小写）
-      const dir = DIR[e.key] ?? (e.key.length === 1 ? DIR[e.key.toLowerCase()] : undefined)
+      const dir = getDirection(e.key)
       if (dir) {
         e.preventDefault()
-        // 不允许 180 度掉头：新方向和当前方向不能完全相反
-        // 如当前向右(1,0)，新方向不能是向左(-1,0)
-        const current = directionRef.current
-        if (dir.x !== -current.x || dir.y !== -current.y) {
+        // 不允许 180 度掉头
+        if (!isOppositeDirection(directionRef.current, dir)) {
           nextDirectionRef.current = dir
         }
-        // 如果是 idle 或 over 状态，按方向键直接开始
         if (statusRef.current === 'idle' || statusRef.current === 'over') {
           startGame()
         }
         return
       }
-      if (e.key === ' ') {
+      if (isSpaceKey(e.key)) {
         e.preventDefault()
         if (statusRef.current === 'idle' || statusRef.current === 'over') {
           startGame()

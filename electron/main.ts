@@ -40,7 +40,11 @@ function createWindow(): void {
     webPreferences: {
       // preload 脚本：在渲染进程和主进程之间建一座安全桥梁
       preload: join(__dirname, '../preload/preload.js'),
-      sandbox: false   // 关闭沙箱（因为 preload 需要访问 Node.js API 做 IPC 通信）
+      // 安全配置——显式声明所有关键选项（不依赖 Electron 默认值）
+      sandbox: true,           // 开启 Chromium 沙箱保护（preload 只用 contextBridge/ipcRenderer，完全兼容）
+      contextIsolation: true,  // 渲染进程与 preload 隔离——防止 XSS 攻击访问 Node API
+      nodeIntegration: false,  // 禁止渲染进程直接使用 Node.js
+      webSecurity: true        // 启用 Web 安全策略（同源检测等）
     }
   })
 
@@ -51,14 +55,31 @@ function createWindow(): void {
 
   // 窗口内点击链接时的处理：用系统默认浏览器打开，而不是在应用内打开
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // 只允许 http/https 协议，防止 file:// 等协议读取本地文件
+    try {
+      const url = new URL(details.url)
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        shell.openExternal(details.url)
+      }
+    } catch { /* 无效 URL 静默忽略 */ }
     return { action: 'deny' }  // 拒绝在应用内打开新窗口
   })
 
   // 根据环境加载不同的 URL
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    // 开发模式：连接 Vite 开发服务器（http://localhost:5173）
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    // 开发模式：连接 Vite 开发服务器（仅允许 localhost 防止注入恶意地址）
+    const devUrl = process.env['ELECTRON_RENDERER_URL']
+    try {
+      const parsed = new URL(devUrl)
+      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
+        mainWindow.loadURL(devUrl)
+      } else {
+        // 非 localhost 的 URL 拒绝加载，回退到打包后的文件
+        mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+      }
+    } catch {
+      mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    }
   } else {
     // 生产模式：加载打包后的 HTML 文件
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))

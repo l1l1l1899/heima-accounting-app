@@ -11,24 +11,11 @@ import type {
   CategoryStat,
   MonthlyTrend
 } from '../types'
+import { mapCategory } from '../utils/category'
 
 const api = window.electronAPI
 
 // ====== Categories ======
-
-/** 把数据库返回的 snake_case 字段映射为 ts 用的 camelCase */
-function mapCategory(row: unknown): Category {
-  const r = row as Record<string, unknown>
-  return {
-    id: r.id as number,
-    type: r.type as TransactionType,
-    name: r.name as string,
-    parentId: (r.parent_id ?? null) as number | null,
-    icon: r.icon as string,
-    sortOrder: r.sort_order as number,
-    isPreset: (r.is_preset as number) === 1
-  }
-}
 
 /** 把数据库返回的 transactions 行映射为 camelCase 字段 */
 function mapTransaction(row: unknown): Transaction {
@@ -57,7 +44,7 @@ export async function getCategories(type?: 'expense' | 'income'): Promise<Catego
   sql += ' ORDER BY parent_id NULLS FIRST, sort_order'
   // NULLS FIRST 确保一级分类（parent_id 为 NULL）排在二级分类前面
   const rows = await api.db.queryAll(sql, params)
-  return rows.map(mapCategory)
+  return rows.map(r => mapCategory(r as Record<string, unknown>))
 }
 
 /** 获取一级分类 */
@@ -71,7 +58,7 @@ export async function getLevel1Categories(type?: 'expense' | 'income'): Promise<
   }
   sql += ' ORDER BY sort_order'
   const rows = await api.db.queryAll(sql, params)
-  return rows.map(mapCategory)
+  return rows.map(r => mapCategory(r as Record<string, unknown>))
 }
 
 /** 获取某一级分类下的二级分类 */
@@ -80,7 +67,7 @@ export async function getLevel2Categories(parentId: number): Promise<Category[]>
     'SELECT * FROM categories WHERE parent_id = ? ORDER BY sort_order',
     [parentId]
   )
-  return rows.map(mapCategory)
+  return rows.map(r => mapCategory(r as Record<string, unknown>))
 }
 
 // ====== Category Management ======
